@@ -1,12 +1,15 @@
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require('express');
 const cors = require('cors');
+const jwt = require("jsonwebtoken")
+const cookieParser = require("cookie-parser")
 const app = express()
 const port = process.env.PORT || 5000;
 require('dotenv').config()
 
-app.use(cors())
+app.use(cors({origin:['http://localhost:5173'],credentials:true}))
 app.use(express.json())
+app.use(cookieParser())
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.p2unx4b.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -27,11 +30,83 @@ async function run() {
     await client.connect();
     const database = client.db("carDB");
     const serviceCollection = database.collection("service");
+    const bookingCollection = database.collection("booking");
 
+
+    // Auth related api
+    app.post('/jwt',async(req,res)=> {
+      const user = req.body
+      console.log(user);
+      const token = jwt.sign(user,process.env.ACCESS_TOKEN_SECREAT,{expiresIn:'1h'})
+      res
+      .cookie('token',token,{
+        httpOnly:true,
+        sameSite:'strict',
+        secure:false
+      })
+      .send({success:true})
+    })
+
+    // service related api
     app.get('/service',async(req,res) => {
        const cursor = serviceCollection.find()
        const result = await cursor.toArray()
        res.send(result)
+    })
+
+    app.get('/service/:id',async (req,res)=> {
+      const id = req.params.id;
+      const query = {
+        _id:new ObjectId(id)
+      }
+      const option = {
+        projection:{title:1,price:1,service_id:1,img:1,status:1}
+      }
+      const result = await serviceCollection.findOne(query,option)
+      res.send(result)
+    })
+
+    app.post('/booking',async(req,res)=> {
+      const order = req.body;
+      const result = await bookingCollection.insertOne(order)
+      res.send(result)
+    })
+    
+    app.get('/booking',async(req,res)=> {
+      let query = {}
+      console.log('tok tok token',req.cookies.token);
+        if(req.query?.email){
+          query ={
+            email: req.query.email
+          }
+        }
+        const result = await bookingCollection.find(query).toArray()
+        res.send(result)
+    })
+
+    app.delete('/booking/:id',async(req,res)=>{
+      const id = req.params.id;
+      const query ={
+        _id :new ObjectId(id)
+      }
+      const result = await bookingCollection.deleteOne(query)
+      res.send(result)
+    })
+
+    app.patch('/booking/:id',async(req,res)=>{
+      const id = req.params.id;
+      const query = {
+        _id:new ObjectId(id)
+      }
+      const updatedBooking = req.body;
+      console.log(updatedBooking);
+      const upDoc = {
+        $set:{
+          status:updatedBooking.status
+        }
+      }
+      const result = await bookingCollection.updateOne(query,upDoc)
+      res.send(result)
     })
 
 
